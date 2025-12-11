@@ -157,19 +157,6 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 
 ---
 
-## 🙏 Acknowledgments
-
-- Google Gemini for the powerful AI model
-- Monaco Editor team for the excellent code editor
-- Tailwind CSS for the utility-first CSS framework
-- The React team for the amazing framework
-
----
-
-## 📧 Contact
-
-- GitHub: [@YOUR_USERNAME](https://github.com/YOUR_USERNAME)
-- Issues: [Report a bug](https://github.com/YOUR_USERNAME/genai-code-agent/issues)
 
 ---
 
