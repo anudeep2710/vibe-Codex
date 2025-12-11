@@ -1,5 +1,12 @@
 <div align="center">
 
+# 🚀 GenAI Code Agent
+
+**AI-Powered Code Generation with Gemini 2.5 Flash**
+
+
+
+</div>
 
 ---
 
