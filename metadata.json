@@ -1,0 +1,4 @@
+{
+  "name": "GenAI Code Agent",
+  "description": "An autonomous AI agent that generates, plans, and writes React code using Gemini 2.5 Flash."
+}
