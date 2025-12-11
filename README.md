@@ -1,15 +1,6 @@
 <div align="center">
 <img width="1200" height="475" alt="GenAI Code Agent Banner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 
-# 🚀 GenAI Code Agent
-
-**AI-Powered Code Generation with Gemini 2.5 Flash**
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/YOUR_USERNAME/genai-code-agent)
-
-[Live Demo](https://genai-code-agent.vercel.app) • [Documentation](./DEPLOYMENT.md) • [Report Bug](https://github.com/YOUR_USERNAME/genai-code-agent/issues)
-
-</div>
 
 ---
 
