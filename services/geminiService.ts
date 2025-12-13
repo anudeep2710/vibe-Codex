@@ -1,17 +1,10 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationPlan, FileSystemState, ChatMessage } from '../types';
+import { withKeyRotation } from './keyManager';
 
 // Cache for API responses to prevent duplicate calls
 const responseCache = new Map<string, any>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
-const getClient = () => {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("API Key not found. Please set VITE_GEMINI_API_KEY in your .env.local file");
-  }
-  return new GoogleGenAI({ apiKey });
-};
 
 // Retry helper with exponential backoff
 const retryWithBackoff = async <T>(
@@ -53,7 +46,7 @@ const formatContext = (files: FileSystemState, history: ChatMessage[]) => {
 
   let historyStr = "CONVERSATION HISTORY:\n";
   // Get last 10 messages to maintain context without overflowing
-  const recentHistory = history.slice(-10);
+  const recentHistory = Array.isArray(history) ? history.slice(-10) : [];
   recentHistory.forEach(msg => {
     historyStr += `${msg.role.toUpperCase()}: ${msg.content}\n`;
   });
@@ -63,65 +56,68 @@ const formatContext = (files: FileSystemState, history: ChatMessage[]) => {
 
 export const generatePlan = async (goal: string, files: FileSystemState, history: ChatMessage[]): Promise<GenerationPlan> => {
   // Check cache first
-  const cacheKey = getCacheKey('plan', goal, Object.keys(files), history.slice(-5));
+  const historyArray = Array.isArray(history) ? history : [];
+  const cacheKey = getCacheKey('plan', goal, Object.keys(files), historyArray.slice(-5));
   const cached = responseCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.data;
   }
 
-  const ai = getClient();
-  const { contextStr, historyStr } = formatContext(files, history);
+  // Use multi-key rotation for automatic failover
+  const plan = await withKeyRotation(async (ai) => {
+    const { contextStr, historyStr } = formatContext(files, history);
 
-  const systemPrompt = `You are a Senior Polyglot Software Architect. 
-  Your goal is to analyze a coding request and create a detailed implementation plan.
-  
-  CONTEXT:
-  You have access to the current file system state and conversation history.
-  Always analyze the EXISTING files before creating new ones. 
-  If the user asks to modify something, your plan should involve updating existing files.
-  
-  The plan should be appropriate for the requested language or framework.
-  Focus on file structure, dependencies, and technical approach.`;
+    const systemPrompt = `You are a Senior Polyglot Software Architect. 
+    Your goal is to analyze a coding request and create a detailed implementation plan.
+    
+    CONTEXT:
+    You have access to the current file system state and conversation history.
+    Always analyze the EXISTING files before creating new ones. 
+    If the user asks to modify something, your plan should involve updating existing files.
+    
+    The plan should be appropriate for the requested language or framework.
+    Focus on file structure, dependencies, and technical approach.`;
 
-  const prompt = `
-  ${contextStr}
-  
-  ${historyStr}
-  
-  USER REQUEST: "${goal}"
-  
-  Create a JSON execution plan including a summary, list of files to create or modify, and technical approach.
-  `;
+    const prompt = `
+    ${contextStr}
+    
+    ${historyStr}
+    
+    USER REQUEST: "${goal}"
+    
+    Create a JSON execution plan including a summary, list of files to create or modify, and technical approach.
+    `;
 
-  const response = await retryWithBackoff(() =>
-    ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            summary: { type: Type.STRING },
-            filesToCreate: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: "List of files to create OR overwrite."
+    const response = await retryWithBackoff(() =>
+      ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              summary: { type: Type.STRING },
+              filesToCreate: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "List of files to create OR overwrite."
+              },
+              technicalApproach: { type: Type.STRING }
             },
-            technicalApproach: { type: Type.STRING }
-          },
-          required: ["summary", "filesToCreate", "technicalApproach"]
+            required: ["summary", "filesToCreate", "technicalApproach"]
+          }
         }
-      }
-    })
-  );
+      })
+    );
 
-  if (!response.text) {
-    throw new Error("Failed to generate plan - empty response from API");
-  }
+    if (!response.text) {
+      throw new Error("Failed to generate plan - empty response from API");
+    }
 
-  const plan = JSON.parse(response.text) as GenerationPlan;
+    return JSON.parse(response.text) as GenerationPlan;
+  });
 
   // Store in cache
   responseCache.set(cacheKey, { data: plan, timestamp: Date.now() });
@@ -130,70 +126,72 @@ export const generatePlan = async (goal: string, files: FileSystemState, history
 };
 
 export const generateCode = async (goal: string, plan: GenerationPlan, files: FileSystemState, history: ChatMessage[]): Promise<Record<string, string>> => {
-  const ai = getClient();
-  const { contextStr, historyStr } = formatContext(files, history);
+  // Use multi-key rotation for automatic failover
+  return await withKeyRotation(async (ai) => {
+    const { contextStr, historyStr } = formatContext(files, history);
 
-  const systemPrompt = `You are an expert Polyglot Developer (React, TypeScript, Python, HTML, CSS).
-  Generate production-ready code based on the user's goal and the provided architectural plan.
-  
-  RULES:
-  1. Detect the target language based on the file extension.
-  2. For React: Use Functional Components with Hooks and Tailwind CSS.
-  3. For Python: Use PEP 8 standards.
-  4. Ensure all imports are valid for the given context.
-  5. OUTPUT FORMAT:
-     FILE: [path]
-     [code content]
-  6. IMPORTANT: You must output the FULL content of the file, even if you are just editing a small part. Do not output diffs.
-  7. Do not include markdown code blocks.
-  `;
+    const systemPrompt = `You are an expert Polyglot Developer (React, TypeScript, Python, HTML, CSS).
+    Generate production-ready code based on the user's goal and the provided architectural plan.
+    
+    RULES:
+    1. Detect the target language based on the file extension.
+    2. For React: Use Functional Components with Hooks and Tailwind CSS.
+    3. For Python: Use PEP 8 standards.
+    4. Ensure all imports are valid for the given context.
+    5. OUTPUT FORMAT:
+       FILE: [path]
+       [code content]
+    6. IMPORTANT: You must output the FULL content of the file, even if you are just editing a small part. Do not output diffs.
+    7. Do not include markdown code blocks.
+    `;
 
-  const prompt = `
-  ${contextStr}
-  
-  ${historyStr}
-  
-  CURRENT GOAL: ${goal}
-  PLAN SUMMARY: ${plan.summary}
-  TECHNICAL APPROACH: ${plan.technicalApproach}
-  FILES TO GENERATE/UPDATE: ${plan.filesToCreate.join(', ')}
-  
-  Generate the code now.
-  `;
+    const prompt = `
+    ${contextStr}
+    
+    ${historyStr}
+    
+    CURRENT GOAL: ${goal}
+    PLAN SUMMARY: ${plan.summary}
+    TECHNICAL APPROACH: ${plan.technicalApproach}
+    FILES TO GENERATE/UPDATE: ${plan.filesToCreate.join(', ')}
+    
+    Generate the code now.
+    `;
 
-  const response = await retryWithBackoff(() =>
-    ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        systemInstruction: systemPrompt,
-        temperature: 0.4,
+    const response = await retryWithBackoff(() =>
+      ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          systemInstruction: systemPrompt,
+          temperature: 0.4,
+        }
+      })
+    );
+
+    const text = response.text || '';
+
+    // Parse the output
+    const generatedFiles: Record<string, string> = {};
+    const chunks = text.split(/FILE:\s*/);
+
+    chunks.forEach(chunk => {
+      if (!chunk.trim()) return;
+
+      const firstLineEnd = chunk.indexOf('\n');
+      if (firstLineEnd === -1) return;
+
+      const filePath = chunk.substring(0, firstLineEnd).trim();
+      let content = chunk.substring(firstLineEnd + 1).trim();
+
+      // Cleanup markdown if present (fallback)
+      content = content.replace(/^```(typescript|tsx|ts|javascript|js|python|py|html|css|json|md)?/gm, '').replace(/```$/gm, '');
+
+      if (filePath && content) {
+        generatedFiles[filePath] = content;
       }
-    })
-  );
+    });
 
-  const text = response.text || '';
-
-  // Parse the output
-  const generatedFiles: Record<string, string> = {};
-  const chunks = text.split(/FILE:\s*/);
-
-  chunks.forEach(chunk => {
-    if (!chunk.trim()) return;
-
-    const firstLineEnd = chunk.indexOf('\n');
-    if (firstLineEnd === -1) return;
-
-    const filePath = chunk.substring(0, firstLineEnd).trim();
-    let content = chunk.substring(firstLineEnd + 1).trim();
-
-    // Cleanup markdown if present (fallback)
-    content = content.replace(/^```(typescript|tsx|ts|javascript|js|python|py|html|css|json|md)?/gm, '').replace(/```$/gm, '');
-
-    if (filePath && content) {
-      generatedFiles[filePath] = content;
-    }
+    return generatedFiles;
   });
-
-  return generatedFiles;
 };

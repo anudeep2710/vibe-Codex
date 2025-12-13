@@ -2,7 +2,8 @@ import React, { useMemo } from 'react';
 import { FileData, FileSystemState } from '../types';
 import { RefreshCw, Smartphone, Monitor } from 'lucide-react';
 import { CodeExecutor } from './CodeExecutor';
-import { canExecute } from '../services/pistonService';
+import { MarkdownViewer } from './MarkdownViewer';
+import { canExecute } from '../services/judge0Service';
 
 interface PreviewProps {
   file: FileData | null;
@@ -12,6 +13,7 @@ interface PreviewProps {
 export const Preview: React.FC<PreviewProps> = ({ file, allFiles = {} }) => {
   // Check if the file can be executed (Python, Java, etc.)
   const isExecutable = file && canExecute(file.language);
+  const isMarkdown = file && (file.path.endsWith('.md') || file.language === 'markdown');
 
   const srcDoc = useMemo(() => {
     if (!file) return '';
@@ -19,7 +21,7 @@ export const Preview: React.FC<PreviewProps> = ({ file, allFiles = {} }) => {
     const isReact = file.path.endsWith('.tsx') || file.path.endsWith('.jsx');
     const isHtml = file.path.endsWith('.html');
 
-    if (!isReact && !isHtml) {
+    if (!isReact && !isHtml && !isMarkdown) {
       // For executable languages, we'll show the executor instead
       if (isExecutable) {
         return '';
@@ -30,7 +32,40 @@ export const Preview: React.FC<PreviewProps> = ({ file, allFiles = {} }) => {
     }
 
     if (isHtml) {
-      return file.content;
+      // Combine HTML with CSS and JS files from the project
+      let htmlContent = file.content;
+
+      // Find and inject CSS files
+      const cssFiles = Object.values(allFiles).filter(f => f.path.endsWith('.css'));
+      if (cssFiles.length > 0) {
+        const combinedCSS = cssFiles.map(f => f.content).join('\n');
+        // Inject CSS before </head> or at the start if no head tag
+        if (htmlContent.includes('</head>')) {
+          htmlContent = htmlContent.replace('</head>', `<style>\n${combinedCSS}\n</style>\n</head>`);
+        } else if (htmlContent.includes('<head>')) {
+          htmlContent = htmlContent.replace('<head>', `<head>\n<style>\n${combinedCSS}\n</style>`);
+        } else {
+          htmlContent = `<style>\n${combinedCSS}\n</style>\n${htmlContent}`;
+        }
+      }
+
+      // Find and inject JS files
+      const jsFiles = Object.values(allFiles).filter(f =>
+        (f.path.endsWith('.js') || f.path.endsWith('.mjs')) && f.path !== file.path
+      );
+      if (jsFiles.length > 0) {
+        const combinedJS = jsFiles.map(f => f.content).join('\n');
+        // Inject JS before </body> or at the end if no body tag
+        if (htmlContent.includes('</body>')) {
+          htmlContent = htmlContent.replace('</body>', `<script>\n${combinedJS}\n</script>\n</body>`);
+        } else if (htmlContent.includes('<body>')) {
+          htmlContent = htmlContent.replace('<body>', `<body>\n<script>\n${combinedJS}\n</script>`);
+        } else {
+          htmlContent = `${htmlContent}\n<script>\n${combinedJS}\n</script>`;
+        }
+      }
+
+      return htmlContent;
     }
 
     // Helper to process code: strip imports and expose exports to window
@@ -138,6 +173,7 @@ export const Preview: React.FC<PreviewProps> = ({ file, allFiles = {} }) => {
     );
   }
 
+
   return (
     <div className="h-full w-full bg-white flex flex-col">
       <div className="h-8 bg-surface border-b border-border flex items-center px-4 justify-between select-none">
@@ -148,34 +184,41 @@ export const Preview: React.FC<PreviewProps> = ({ file, allFiles = {} }) => {
         <RefreshCw className="w-3 h-3 text-muted cursor-pointer hover:text-white transition-colors" onClick={() => { /* Force refresh if needed */ }} />
       </div>
 
-      {/* Preview iframe for web languages */}
-      {!isExecutable && srcDoc && (
-        <iframe
-          title="preview"
-          srcDoc={srcDoc}
-          className="flex-1 w-full border-none bg-white"
-          sandbox="allow-scripts allow-modals"
-        />
-      )}
+      {/* Markdown Viewer */}
+      {isMarkdown ? (
+        <MarkdownViewer content={file.content} />
+      ) : (
+        <>
+          {/* Preview iframe for web languages */}
+          {!isExecutable && srcDoc && (
+            <iframe
+              title="preview"
+              srcDoc={srcDoc}
+              className="flex-1 w-full border-none bg-white"
+              sandbox="allow-scripts allow-mod als"
+            />
+          )}
 
-      {/* Code executor for non-web languages */}
-      {isExecutable && (
-        <div className="flex-1 overflow-auto bg-[#1e1e1e] flex flex-col">
-          <div className="flex-1 flex items-center justify-center text-muted p-8 text-center">
-            <div>
-              <p className="text-sm mb-2">This file contains {file.language} code.</p>
-              <p className="text-xs">Use the executor below to run it.</p>
+          {/* Code executor for non-web languages */}
+          {isExecutable && (
+            <div className="flex-1 overflow-auto bg-[#1e1e1e] flex flex-col">
+              <div className="flex-1 flex items-center justify-center text-muted p-8 text-center">
+                <div>
+                  <p className="text-sm mb-2">This file contains {file.language} code.</p>
+                  <p className="text-xs">Use the executor below to run it.</p>
+                </div>
+              </div>
+              <CodeExecutor code={file.content} language={file.language} />
             </div>
-          </div>
-          <CodeExecutor code={file.content} language={file.language} />
-        </div>
-      )}
+          )}
 
-      {/* Empty state for unsupported files */}
-      {!isExecutable && !srcDoc && (
-        <div className="flex-1 flex items-center justify-center bg-[#1e1e1e] text-muted">
-          <p className="text-sm">Preview not available for this file type</p>
-        </div>
+          {/* Empty state for unsupported files */}
+          {!isExecutable && !srcDoc && (
+            <div className="flex-1 flex items-center justify-center bg-[#1e1e1e] text-muted">
+              <p className="text-sm">Preview not available for this file type</p>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

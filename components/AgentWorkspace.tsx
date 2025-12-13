@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { CodeEditor } from './CodeEditor';
 import { Preview } from './Preview';
@@ -6,9 +7,10 @@ import { generatePlan, generateCode } from '../services/geminiService';
 import {
   Play, Code2, Layers, Cpu, Layout, FileCode,
   MessageSquare, Plus, FolderOpen, Send, Loader2,
-  Trash2, MonitorPlay, ChevronLeft, Home
+  Trash2, MonitorPlay, ChevronLeft, Home, Download
 } from 'lucide-react';
 import { Terminal } from './Terminal';
+import { downloadFile, downloadProjectAsZip } from '../utils/downloadUtils';
 
 // --- Sub-components (Inline for single-file update simplicity) ---
 
@@ -47,7 +49,7 @@ const ProjectSidebar: React.FC<{
           <button
             key={p.id}
             onClick={() => onSelectProject(p.id)}
-            className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center ${activeProjectId === p.id ? 'bg-primary/20 text-white border border-primary/30' : 'text-gray-400 hover:text-white hover:bg-[#21262d]'}`}
+            className={`w - full text - left px - 2 py - 1.5 rounded text - sm flex items - center ${activeProjectId === p.id ? 'bg-primary/20 text-white border border-primary/30' : 'text-gray-400 hover:text-white hover:bg-[#21262d]'} `}
           >
             <FolderOpen className="w-3 h-3 mr-2" />
             <span className="truncate">{p.name}</span>
@@ -69,7 +71,7 @@ const ProjectSidebar: React.FC<{
             <div
               key={file.path}
               onClick={() => onSelectFile(file.path)}
-              className={`flex items-center px-2 py-1.5 rounded cursor-pointer mb-1 text-sm ${activeFilePath === file.path ? 'bg-secondary text-white' : 'text-gray-400 hover:text-white hover:bg-[#21262d]'}`}
+              className={`flex items - center px - 2 py - 1.5 rounded cursor - pointer mb - 1 text - sm ${activeFilePath === file.path ? 'bg-secondary text-white' : 'text-gray-400 hover:text-white hover:bg-[#21262d]'} `}
             >
               {file.path.endsWith('tsx') ? <Code2 className="w-3.5 h-3.5 mr-2 text-blue-400" /> :
                 file.path.endsWith('py') ? <FileCode className="w-3.5 h-3.5 mr-2 text-yellow-400" /> :
@@ -95,6 +97,10 @@ const ChatInterface: React.FC<{
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    console.log('ChatInterface messages updated:', messages.length, messages);
+  }, [messages]);
+
   const handleSend = () => {
     if (!input.trim() || isProcessing) return;
     onSendMessage(input);
@@ -112,11 +118,11 @@ const ChatInterface: React.FC<{
         )}
 
         {messages.map((msg) => (
-          <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-            <div className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${msg.role === 'user'
+          <div key={msg.id} className={`flex flex - col ${msg.role === 'user' ? 'items-end' : 'items-start'} `}>
+            <div className={`max - w - [90 %] rounded - 2xl px - 4 py - 3 text - sm leading - relaxed ${msg.role === 'user'
               ? 'bg-primary text-white rounded-br-none'
               : 'bg-[#1c2128] text-gray-200 rounded-bl-none border border-border'
-              }`}>
+              } `}>
               <div className="whitespace-pre-wrap">{msg.content}</div>
             </div>
             {msg.events && msg.events.length > 0 && (
@@ -162,10 +168,10 @@ const ChatInterface: React.FC<{
           <button
             onClick={handleSend}
             disabled={isProcessing || !input.trim()}
-            className={`absolute bottom-3 right-3 p-2 rounded-lg transition-all ${isProcessing || !input.trim()
+            className={`absolute bottom - 3 right - 3 p - 2 rounded - lg transition - all ${isProcessing || !input.trim()
               ? 'bg-border text-muted cursor-not-allowed'
               : 'bg-accent hover:bg-blue-400 text-white shadow-lg'
-              }`}
+              } `}
           >
             {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </button>
@@ -224,10 +230,10 @@ export const AgentWorkspace: React.FC<AgentWorkspaceProps> = ({
 
   // Actions
   const handleCreateProject = () => {
-    const newId = `proj_${Date.now()}`;
+    const newId = `proj_${Date.now()} `;
     const newProject: Project = {
       id: newId,
-      name: `Project ${projects.length + 1}`,
+      name: `Project ${projects.length + 1} `,
       files: { ...INITIAL_FILES },
       messages: [],
       createdAt: Date.now()
@@ -244,9 +250,15 @@ export const AgentWorkspace: React.FC<AgentWorkspaceProps> = ({
   };
 
   const addMessage = (projectId: string, message: ChatMessage) => {
-    setProjects(prev => prev.map(p =>
-      p.id === projectId ? { ...p, messages: [...p.messages, message] } : p
-    ));
+    console.log('Adding message:', { projectId, message, currentProjects: projects.length });
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        const updated = { ...p, messages: [...p.messages, message] };
+        console.log('Updated project messages:', updated.messages.length);
+        return updated;
+      }
+      return p;
+    }));
   };
 
   const updateLastMessageEvents = (projectId: string, event: AgentEvent) => {
@@ -269,7 +281,7 @@ export const AgentWorkspace: React.FC<AgentWorkspaceProps> = ({
 
     // 1. Add User Message
     const userMsg: ChatMessage = {
-      id: `msg_${Date.now()}_u`,
+      id: `msg_${Date.now()} _u`,
       role: 'user',
       content: text,
       timestamp: Date.now()
@@ -277,7 +289,7 @@ export const AgentWorkspace: React.FC<AgentWorkspaceProps> = ({
     addMessage(currentProjectId, userMsg);
 
     // 2. Add Placeholder Assistant Message
-    const aiMsgId = `msg_${Date.now()}_a`;
+    const aiMsgId = `msg_${Date.now()} _a`;
     const aiMsg: ChatMessage = {
       id: aiMsgId,
       role: 'assistant',
@@ -317,7 +329,7 @@ export const AgentWorkspace: React.FC<AgentWorkspaceProps> = ({
           content,
           language: path.endsWith('tsx') ? 'tsx' : path.endsWith('py') ? 'python' : path.endsWith('html') ? 'html' : 'javascript'
         };
-        log('writing', `Updated ${path}`);
+        log('writing', `Updated ${path} `);
       });
 
       updateProjectFiles(currentProjectId, newFiles);
@@ -327,7 +339,7 @@ export const AgentWorkspace: React.FC<AgentWorkspaceProps> = ({
         if (p.id !== currentProjectId) return p;
         const msgs = [...p.messages];
         const lastMsg = msgs[msgs.length - 1];
-        if (lastMsg.id === aiMsgId) {
+        if (lastMsg && lastMsg.id === aiMsgId) {
           msgs[msgs.length - 1] = {
             ...lastMsg,
             content: `I've successfully processed your request.\n\n**Summary:** ${plan.summary}\n\n**Changes:**\n${Object.keys(generatedFiles).map(f => `- ${f}`).join('\n')}`
@@ -353,7 +365,7 @@ export const AgentWorkspace: React.FC<AgentWorkspaceProps> = ({
         if (p.id !== currentProjectId) return p;
         const msgs = [...p.messages];
         const lastMsg = msgs[msgs.length - 1];
-        if (lastMsg.id === aiMsgId) {
+        if (lastMsg && lastMsg.id === aiMsgId) {
           msgs[msgs.length - 1] = { ...lastMsg, content: `Sorry, I encountered an error: ${error.message}` };
         }
         return { ...p, messages: msgs };
@@ -430,8 +442,29 @@ export const AgentWorkspace: React.FC<AgentWorkspaceProps> = ({
               Preview
             </button>
           </div>
-          <div className="text-xs text-muted pr-4 flex items-center">
-            <span className="opacity-50 mr-2">{activeFilePath}</span>
+
+          <div className="flex items-center space-x-3">
+            <span className="text-xs text-muted pr-4 flex items-center opacity-50">{activeFilePath}</span>
+
+            {/* Download Buttons */}
+            <button
+              onClick={() => downloadFile(activeFilePath, files[activeFilePath]?.content || '')}
+              className="px-3 py-1.5 text-xs bg-[#1E1433] hover:bg-[#2D1B4E] text-[#00F5FF] rounded-md transition-all flex items-center space-x-1 border border-[#4A2D6E] hover:border-[#00F5FF] hover:shadow-[0_0_10px_rgba(0,245,255,0.3)]"
+              title="Download current file"
+            >
+              <Download className="w-3 h-3" />
+              <span>File</span>
+            </button>
+
+            <button
+              onClick={() => downloadProjectAsZip(activeProject?.name || 'Project', files)}
+              className="px-3 py-1.5 text-xs bg-gradient-to-r from-[#FF006E] to-[#8338EC] hover:from-[#FF1A85] hover:to-[#9C4FFF] text-white rounded-md transition-all flex items-center space-x-1 shadow-md hover:shadow-[0_0_15px_rgba(255,0,110,0.5)]"
+              title="Download entire project as ZIP"
+            >
+              <Download className="w-3 h-3" />
+              <span>Project ZIP</span>
+            </button>
+
             {isProcessing && <Loader2 className="w-3 h-3 animate-spin text-accent" />}
           </div>
         </div>

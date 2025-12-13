@@ -1,140 +1,85 @@
-import React, { useState, useEffect } from 'react';
-import { AgentWorkspace } from './components/AgentWorkspace';
-import { SplashScreen } from './components/SplashScreen';
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
+import { AuthProvider } from './contexts/AuthContext';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { SignIn } from './pages/SignIn';
+import { SignUp } from './pages/SignUp';
+import { Dashboard } from './pages/Dashboard';
+import { WorkspacePage } from './pages/WorkspacePage';
+import { SetupRequired } from './pages/SetupRequired';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { LoadingSpinner } from './components/LoadingSpinner';
-import { Project, FileSystemState } from './types';
-import { storageService } from './services/storageService';
-
-const INITIAL_FILES: FileSystemState = {
-  'README.md': {
-    path: 'README.md',
-    language: 'markdown',
-    content: '# New Project\n\nStart chatting to generate code.'
-  }
-};
-
-const INITIAL_PROJECT: Project = {
-  id: 'default-1',
-  name: 'Demo Project',
-  files: INITIAL_FILES,
-  messages: [],
-  createdAt: Date.now()
-};
+import { isSupabaseConfigured } from './config/supabase';
 
 function App() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Initialize IndexedDB and load projects
-  useEffect(() => {
-    const initializeApp = async () => {
-      try {
-        await storageService.init();
-
-        // Migrate from localStorage if needed
-        await storageService.migrateFromLocalStorage();
-
-        // Load projects from IndexedDB
-        const loadedProjects = await storageService.getAllProjects();
-
-        if (loadedProjects.length === 0) {
-          // Create initial project if none exist
-          await storageService.saveProject(INITIAL_PROJECT);
-          setProjects([INITIAL_PROJECT]);
-        } else {
-          setProjects(loadedProjects);
-        }
-
-        setIsLoaded(true);
-      } catch (err) {
-        console.error('Failed to initialize app:', err);
-        setError('Failed to load application data. Please refresh the page.');
-        setIsLoaded(true);
-      }
-    };
-
-    initializeApp();
-  }, []);
-
-  // Auto-save projects whenever they change
-  useEffect(() => {
-    if (isLoaded && projects.length > 0) {
-      projects.forEach(project => {
-        storageService.saveProject(project).catch(err => {
-          console.error('Failed to save project:', err);
-        });
-      });
-    }
-  }, [projects, isLoaded]);
-
-  const handleCreateProject = () => {
-    const newId = `proj_${Date.now()}`;
-    const newProject: Project = {
-      id: newId,
-      name: `Project ${projects.length + 1}`,
-      files: { ...INITIAL_FILES },
-      messages: [],
-      createdAt: Date.now()
-    };
-    setProjects(prev => [...prev, newProject]);
-    setActiveProjectId(newId);
-  };
-
-  const handleDeleteProject = async (projectId: string) => {
-    try {
-      await storageService.deleteProject(projectId);
-      setProjects(prev => prev.filter(p => p.id !== projectId));
-      if (activeProjectId === projectId) {
-        setActiveProjectId(null);
-      }
-    } catch (err) {
-      console.error('Failed to delete project:', err);
-    }
-  };
-
-  if (!isLoaded) {
-    return <LoadingSpinner fullScreen text="Loading your projects..." size="xl" />;
-  }
-
-  if (error) {
+  // Check if Supabase is configured
+  if (!isSupabaseConfigured()) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <div className="text-center">
-          <p className="text-red-500 text-lg mb-4">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-lg font-medium"
-          >
-            Reload Page
-          </button>
-        </div>
-      </div>
+      <ErrorBoundary>
+        <SetupRequired />
+      </ErrorBoundary>
     );
   }
 
-  const activeProject = projects.find(p => p.id === activeProjectId);
-
   return (
     <ErrorBoundary>
-      {activeProjectId && activeProject ? (
-        <AgentWorkspace
-          projects={projects}
-          setProjects={setProjects}
-          activeProjectId={activeProjectId}
-          setActiveProjectId={setActiveProjectId}
-          onBack={() => setActiveProjectId(null)}
-        />
-      ) : (
-        <SplashScreen
-          projects={projects}
-          onCreateProject={handleCreateProject}
-          onSelectProject={setActiveProjectId}
-          onDeleteProject={handleDeleteProject}
-        />
-      )}
+      <BrowserRouter>
+        <AuthProvider>
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              duration: 3000,
+              style: {
+                background: '#1a1f3a',
+                color: '#fff',
+                border: '1px solid #2a2f4a',
+              },
+              success: {
+                iconTheme: {
+                  primary: '#00D4FF',
+                  secondary: '#fff',
+                },
+              },
+              error: {
+                iconTheme: {
+                  primary: '#ef4444',
+                  secondary: '#fff',
+                },
+              },
+            }}
+          />
+
+          <Routes>
+            {/* Public routes */}
+            <Route path="/signin" element={<SignIn />} />
+            <Route path="/signup" element={<SignUp />} />
+
+            {/* Protected routes */}
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/workspace/:projectId"
+              element={
+                <ProtectedRoute>
+                  <WorkspacePage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Redirect root to dashboard */}
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+            {/* Catch all - redirect to dashboard */}
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </AuthProvider>
+      </BrowserRouter>
     </ErrorBoundary>
   );
 }

@@ -1,159 +1,345 @@
-import { Project, FileSystemState, FileData } from '../types';
+import { supabase } from '../config/supabase';
+import type { Project, FileRecord } from '../config/supabase';
+import type { FileSystemState } from '../types';
+import toast from 'react-hot-toast';
 
-const DB_NAME = 'GenAICodeAgent';
-const DB_VERSION = 1;
-const PROJECTS_STORE = 'projects';
+/**
+ * Cloud Storage Service for Vibe Code-X
+ * Manages project persistence in Supabase
+ */
 
-// IndexedDB helper class
-class StorageService {
-    private db: IDBDatabase | null = null;
+// ============================================
+// Projects
+// ============================================
 
-    async init(): Promise<void> {
-        return new Promise((resolve, reject) => {
-            const request = indexedDB.open(DB_NAME, DB_VERSION);
+export async function createProject(name: string, description?: string): Promise<Project | null> {
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Not authenticated');
 
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => {
-                this.db = request.result;
-                resolve();
-            };
+        const { data, error } = await supabase
+            .from('projects')
+            .insert({
+                user_id: user.id,
+                name,
+                description: description || null,
+            })
+            .select()
+            .single();
 
-            request.onupgradeneeded = (event) => {
-                const db = (event.target as IDBOpenDBRequest).result;
+        if (error) throw error;
 
-                // Create projects store
-                if (!db.objectStoreNames.contains(PROJECTS_STORE)) {
-                    const objectStore = db.createObjectStore(PROJECTS_STORE, { keyPath: 'id' });
-                    objectStore.createIndex('createdAt', 'createdAt', { unique: false });
-                    objectStore.createIndex('name', 'name', { unique: false });
-                }
-            };
-        });
-    }
-
-    // Get all projects
-    async getAllProjects(): Promise<Project[]> {
-        if (!this.db) await this.init();
-
-        return new Promise((resolve, reject) => {
-            const transaction = this.db!.transaction(PROJECTS_STORE, 'readonly');
-            const store = transaction.objectStore(PROJECTS_STORE);
-            const request = store.getAll();
-
-            request.onsuccess = () => resolve(request.result || []);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // Get single project by ID
-    async getProject(id: string): Promise<Project | null> {
-        if (!this.db) await this.init();
-
-        return new Promise((resolve, reject) => {
-            const transaction = this.db!.transaction(PROJECTS_STORE, 'readonly');
-            const store = transaction.objectStore(PROJECTS_STORE);
-            const request = store.get(id);
-
-            request.onsuccess = () => resolve(request.result || null);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // Save/update project
-    async saveProject(project: Project): Promise<void> {
-        if (!this.db) await this.init();
-
-        return new Promise((resolve, reject) => {
-            const transaction = this.db!.transaction(PROJECTS_STORE, 'readwrite');
-            const store = transaction.objectStore(PROJECTS_STORE);
-            const request = store.put(project);
-
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // Delete project
-    async deleteProject(id: string): Promise<void> {
-        if (!this.db) await this.init();
-
-        return new Promise((resolve, reject) => {
-            const transaction = this.db!.transaction(PROJECTS_STORE, 'readwrite');
-            const store = transaction.objectStore(PROJECTS_STORE);
-            const request = store.delete(id);
-
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // Migrate from localStorage to IndexedDB
-    async migrateFromLocalStorage(): Promise<void> {
-        const localStorageKey = 'vibing_code_projects';
-        const savedData = localStorage.getItem(localStorageKey);
-
-        if (!savedData) return;
-
-        try {
-            const projects: Project[] = JSON.parse(savedData);
-
-            // Save each project to IndexedDB
-            for (const project of projects) {
-                await this.saveProject(project);
-            }
-
-            // Remove from localStorage after successful migration
-            localStorage.removeItem(localStorageKey);
-            console.log('Successfully migrated projects from localStorage to IndexedDB');
-        } catch (error) {
-            console.error('Failed to migrate from localStorage:', error);
-        }
-    }
-
-    // Export all projects as JSON
-    async exportAllProjects(): Promise<string> {
-        const projects = await this.getAllProjects();
-        return JSON.stringify(projects, null, 2);
-    }
-
-    // Import projects from JSON
-    async importProjects(jsonData: string): Promise<number> {
-        try {
-            const projects: Project[] = JSON.parse(jsonData);
-            let imported = 0;
-
-            for (const project of projects) {
-                // Generate new ID to avoid conflicts
-                const newProject = {
-                    ...project,
-                    id: `proj_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    createdAt: Date.now()
-                };
-                await this.saveProject(newProject);
-                imported++;
-            }
-
-            return imported;
-        } catch (error) {
-            console.error('Failed to import projects:', error);
-            throw new Error('Invalid project data format');
-        }
-    }
-
-    // Clear all data (for testing or reset)
-    async clearAll(): Promise<void> {
-        if (!this.db) await this.init();
-
-        return new Promise((resolve, reject) => {
-            const transaction = this.db!.transaction(PROJECTS_STORE, 'readwrite');
-            const store = transaction.objectStore(PROJECTS_STORE);
-            const request = store.clear();
-
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
-        });
+        toast.success('Project created!');
+        return data;
+    } catch (error: any) {
+        console.error('Error creating project:', error);
+        toast.error('Failed to create project');
+        return null;
     }
 }
 
-// Export singleton instance
-export const storageService = new StorageService();
+export async function getUserProjects(): Promise<Project[]> {
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return [];
+
+        const { data, error } = await supabase
+            .from('projects')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('updated_at', { ascending: false });
+
+        if (error) throw error;
+
+        return data || [];
+    } catch (error: any) {
+        console.error('Error fetching projects:', error);
+        return [];
+    }
+}
+
+export async function getProject(projectId: string): Promise<Project | null> {
+    try {
+        const { data, error } = await supabase
+            .from('projects')
+            .select('*')
+            .eq('id', projectId)
+            .single();
+
+        if (error) throw error;
+
+        // Update last accessed
+        await supabase
+            .from('projects')
+            .update({ last_accessed_at: new Date().toISOString() })
+            .eq('id', projectId);
+
+        return data;
+    } catch (error: any) {
+        console.error('Error fetching project:', error);
+        return null;
+    }
+}
+
+export async function updateProject(
+    projectId: string,
+    updates: Partial<Pick<Project, 'name' | 'description' | 'is_public' | 'tags'>>
+): Promise<boolean> {
+    try {
+        const { error } = await supabase
+            .from('projects')
+            .update(updates)
+            .eq('id', projectId);
+
+        if (error) throw error;
+
+        toast.success('Project updated!');
+        return true;
+    } catch (error: any) {
+        console.error('Error updating project:', error);
+        toast.error('Failed to update project');
+        return false;
+    }
+}
+
+export async function deleteProject(projectId: string): Promise<boolean> {
+    try {
+        const { error } = await supabase
+            .from('projects')
+            .delete()
+            .eq('id', projectId);
+
+        if (error) throw error;
+
+        toast.success('Project deleted');
+        return true;
+    } catch (error: any) {
+        console.error('Error deleting project:', error);
+        toast.error('Failed to delete project');
+        return false;
+    }
+}
+
+// ============================================
+// Files
+// ============================================
+
+export async function saveProjectFiles(
+    projectId: string,
+    files: FileSystemState
+): Promise<boolean> {
+    try {
+        // Delete existing files
+        await supabase
+            .from('files')
+            .delete()
+            .eq('project_id', projectId);
+
+        // Insert new files
+        const fileRecords = Object.entries(files).map(([path, fileData]) => ({
+            project_id: projectId,
+            path,
+            content: fileData.content,
+            language: fileData.language,
+            size_bytes: new Blob([fileData.content]).size,
+        }));
+
+        if (fileRecords.length > 0) {
+            const { error } = await supabase
+                .from('files')
+                .insert(fileRecords);
+
+            if (error) throw error;
+        }
+
+        // Update project updated_at
+        await supabase
+            .from('projects')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('id', projectId);
+
+        return true;
+    } catch (error: any) {
+        console.error('Error saving files:', error);
+        toast.error('Failed to save files');
+        return false;
+    }
+}
+
+export async function loadProjectFiles(projectId: string): Promise<FileSystemState | null> {
+    try {
+        const { data, error } = await supabase
+            .from('files')
+            .select('*')
+            .eq('project_id', projectId);
+
+        if (error) throw error;
+
+        const fileSystem: FileSystemState = {};
+
+        data?.forEach((file: FileRecord) => {
+            fileSystem[file.path] = {
+                path: file.path,
+                content: file.content || '',
+                language: file.language || 'plaintext',
+            };
+        });
+
+        return fileSystem;
+    } catch (error: any) {
+        console.error('Error loading files:', error);
+        return null;
+    }
+}
+
+// ============================================
+// Auto-save with debouncing
+// ============================================
+
+let autoSaveTimeout: NodeJS.Timeout | null = null;
+
+export function scheduleAutoSave(
+    projectId: string,
+    files: FileSystemState,
+    delayMs: number = 3000
+): void {
+    if (autoSaveTimeout) {
+        clearTimeout(autoSaveTimeout);
+    }
+
+    autoSaveTimeout = setTimeout(async () => {
+        const success = await saveProjectFiles(projectId, files);
+        if (success) {
+            console.log('Auto-saved project:', projectId);
+        }
+    }, delayMs);
+}
+
+export function cancelAutoSave(): void {
+    if (autoSaveTimeout) {
+        clearTimeout(autoSaveTimeout);
+        autoSaveTimeout = null;
+    }
+}
+
+// ============================================
+// Execution History
+// ============================================
+
+export async function saveExecutionHistory(
+    code: string,
+    language: string,
+    projectId: string | null,
+    stdin: string | null,
+    stdout: string | null,
+    stderr: string | null,
+    status: string | null,
+    executionTimeMs: number | null,
+    memoryKb: number | null
+): Promise<boolean> {
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return false;
+
+        const { error } = await supabase
+            .from('execution_history')
+            .insert({
+                user_id: user.id,
+                project_id: projectId,
+                code,
+                language,
+                stdin,
+                stdout,
+                stderr,
+                status,
+                execution_time_ms: executionTimeMs,
+                memory_kb: memoryKb,
+            });
+
+        if (error) throw error;
+
+        return true;
+    } catch (error: any) {
+        console.error('Error saving execution history:', error);
+        return false;
+    }
+}
+
+export async function getExecutionHistory(projectId?: string, limit: number = 50) {
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return [];
+
+        let query = supabase
+            .from('execution_history')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('executed_at', { ascending: false })
+            .limit(limit);
+
+        if (projectId) {
+            query = query.eq('project_id', projectId);
+        }
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+
+        return data || [];
+    } catch (error: any) {
+        console.error('Error fetching execution history:', error);
+        return [];
+    }
+}
+
+// ============================================
+// User Preferences
+// ============================================
+
+export async function getUserPreferences() {
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return null;
+
+        const { data, error } = await supabase
+            .from('user_preferences')
+            .select('*')
+            .eq('user_id', user.id)
+            .single();
+
+        if (error) {
+            // Create default preferences if they don't exist
+            const { data: newPrefs } = await supabase
+                .from('user_preferences')
+                .insert({ user_id: user.id })
+                .select()
+                .single();
+
+            return newPrefs;
+        }
+
+        return data;
+    } catch (error: any) {
+        console.error('Error fetching preferences:', error);
+        return null;
+    }
+}
+
+export async function updateUserPreferences(updates: any): Promise<boolean> {
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return false;
+
+        const { error } = await supabase
+            .from('user_preferences')
+            .update(updates)
+            .eq('user_id', user.id);
+
+        if (error) throw error;
+
+        return true;
+    } catch (error: any) {
+        console.error('Error updating preferences:', error);
+        return false;
+    }
+}
