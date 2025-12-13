@@ -24,7 +24,7 @@ const ProjectSidebar: React.FC<{
   onSelectFile: (path: string) => void;
   onBack: () => void;
 }> = ({ projects, activeProjectId, onSelectProject, onCreateProject, files, activeFilePath, onSelectFile, onBack }) => (
-  <div className="w-64 bg-surface border-r border-border flex flex-col h-full">
+  <div className="w-64 min-w-[200px] max-w-[280px] bg-surface border-r border-border flex flex-col h-full flex-shrink-0">
     {/* Header with Back Button */}
     <div className="p-3 border-b border-border flex items-center">
       <button
@@ -408,12 +408,12 @@ export const AgentWorkspace: React.FC<AgentWorkspaceProps> = ({
       />
 
       {/* 2. Middle Panel: Chat Interface */}
-      <div className="w-[400px] border-r border-border flex flex-col bg-[#0d1117]">
-        <div className="h-12 border-b border-border flex items-center px-4 bg-surface">
+      <div className="w-full md:w-[350px] lg:w-[400px] md:min-w-[300px] md:max-w-[450px] border-r border-border flex flex-col bg-[#0d1117] flex-shrink-0">
+        <div className="h-12 border-b border-border flex items-center px-4 bg-surface flex-shrink-0">
           <Cpu className="w-4 h-4 text-accent mr-2" />
           <span className="font-semibold text-sm">Agent Chat</span>
         </div>
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 overflow-hidden">
           <ChatInterface
             messages={messages}
             isProcessing={isProcessing}
