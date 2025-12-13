@@ -28,15 +28,6 @@ export const Navbar: React.FC = () => {
                             Projects
                             <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-[#FF006E] to-[#00F5FF] group-hover:w-full transition-all duration-300"></span>
                         </Link>
-                        <a
-                            href="https://github.com/yourusername/genai-code-agent"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-gray-300 hover:text-[#FFBE0B] transition-colors font-medium relative group"
-                        >
-                            GitHub
-                            <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-[#FFBE0B] to-[#3FFF00] group-hover:w-full transition-all duration-300"></span>
-                        </a>
                     </div>
 
                     {/* User Menu */}
